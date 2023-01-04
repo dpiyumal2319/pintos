@@ -79,6 +79,18 @@ process_execute (const char *file_name)
     free(cmd_name);
     return -1;
   }
+
+  /* Update the userprog properties of the thread */
+  struct thread* t = thread_get(tid);
+  t->cmd_name = cmd_name;
+  list_init(&t->children);
+
+  /* If the command is exec, add the thread as a 
+     a child thread */
+  if(!strcmp(t->cmd_name, "exec")){
+    list_push_back(thread_current(), &t->child); 
+  }
+
   return tid;
 }
 
@@ -128,7 +140,9 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  while(1);
+  while(1){
+    thread_yield();
+  };
   return -1;
 }
 
@@ -499,25 +513,28 @@ create_stack(void **esp, char* argv[], int argc)
   while(--i >= 0){
     /* Pushing the arguments to the stack */
     int arg_len = (strlen(argv[i])+1);
-    *esp = *esp - arg_len;
+    *esp -= arg_len;
     tot_len += arg_len;
     refs[i] = (uint32_t *)*esp;
     memcpy(*esp,argv[i],arg_len); 
   }
 
   /* Add padding to make memory aligned */
-  while(tot_len % 4 != 0){
-    *esp = *esp - 1;
-    (*(uint8_t *)(*esp)) = 0;
-    tot_len ++;
-  }
+  int align = 4 - tot_len%4;
+  *esp -= align;
+  memset(*esp, 0, align);
 
+  /* Pushing the null sentinel to the stack */
+  *esp = *esp - 4;
+  (*(uint32_t  **)(*esp)) = 0;
+  
   /* Pushing the references of the arguments to the stack */
   i = argc;
   while(--i >= 0){
     *esp = *esp - 4; /* Each reference is 4 bytes*/
     (*(uint32_t **)(*esp)) = refs[i];
   }
+
 
   /* Pushing the reference to argv to the stack */
   *esp = *esp - 4;
