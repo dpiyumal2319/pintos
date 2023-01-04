@@ -3,6 +3,7 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "devices/shutdown.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -15,6 +16,54 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  printf ("system call!\n");
+  int number = *(int *)(f->esp);
+
+  switch(number){
+    case SYS_HALT:
+      halt();
+    case SYS_EXIT:
+      exit();
+    case SYS_EXEC:
+      exec();
+    case SYS_WAIT:
+      wait();
+    case SYS_CREATE:
+      create();
+    case SYS_REMOVE:
+      remove();
+    case SYS_OPEN:
+      open();
+    case SYS_FILESIZE:
+      filesize();
+    case SYS_READ:
+      read();
+    case SYS_WRITE:
+      write();
+    case SYS_SEEK:
+      seek();
+    case SYS_TELL:
+      tell();
+    case SYS_CLOSE:
+      close();
+  }
+
+  printf ("%d - system call!\n", number);
   thread_exit ();
+}
+
+/* System call functions */
+
+/* Halt function - Shutdown PintOS */
+void 
+halt(void)
+{
+  shutdown_power_off();
+}
+
+/* Exit function */
+void
+exit(int status)
+{
+  printf("Name of the process: exit(%d)", status);
+  thread_exit();
 }
