@@ -95,11 +95,16 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
+    char* cmd_name;                     /* Command name run by the thread */
     uint32_t *pagedir;                  /* Page directory. */
+    struct thread* parent;              /* Parent process */
+    struct list children;               /* List to hold the children */
+    struct list_elem child;             /* Child list element */
 #endif
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+   
   };
 
 /* If false (default), use round-robin scheduler.
@@ -138,4 +143,5 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+struct thread* thread_get(tid_t);
 #endif /* threads/thread.h */
