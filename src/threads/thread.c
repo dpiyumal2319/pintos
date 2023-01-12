@@ -182,6 +182,11 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->parent = thread_current();
+
+  /* Initiate file counter and pointers for thread */
+  t->fd_count=0;
+  list_init(&t->files);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -197,6 +202,15 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
+
+  /* Add the thread as a child of its parent */
+  child_t* ct = (child_t*) malloc(sizeof(child_t));
+  ct->tid = tid;
+  ct->status = -2;
+  ct->is_alive = true;
+  ct->parent = thread_current();
+  ct->waited_once = false;
+  list_push_back(&thread_current()->children, &ct->elem);  
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -485,6 +499,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+  list_init(&t->children);
+  sema_init(&t->sema, 0);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

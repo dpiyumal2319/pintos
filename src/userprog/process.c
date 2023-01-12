@@ -22,15 +22,15 @@ static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 static void extract_cmd_args(const char* file_name, char* argv[], int* argc);
-static void extract_cmd_name(const char* file_name, char* cmd_name);
+static void extract_cmd_name(const char* file_name, char** cmd_name);
 
 /* A function to extract the command name from the command
    line instruction */
 static void
-extract_cmd_name(const char* file_name, char* cmd_name)
+extract_cmd_name(const char* file_name, char** cmd_name)
 {
   char* save_ptr;
-  cmd_name = strtok_r(file_name, CMD_ARGS_DELIMITER, &save_ptr);
+  *cmd_name = strtok_r(file_name, CMD_ARGS_DELIMITER, &save_ptr);
 }
 
 /* A function to extract the command line arguments from 
@@ -43,7 +43,7 @@ extract_cmd_args(const char *file_name, char* argv[], int* argc)
   for(token=strtok_r(file_name, CMD_ARGS_DELIMITER, &save_ptr), i=0; 
       token != NULL; token=strtok_r(NULL, CMD_ARGS_DELIMITER, &save_ptr), i++)
   {
-    argv[i] = token;
+      argv[i] = token;
   }  
 
   *argc = i;
@@ -67,10 +67,10 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   /* Extract the command name from the command line instruction */
-  char *cmd_name = malloc (strlen(fn_copy)+1);
+  char *cmd_name = (char* )malloc (strlen(file_name)+1);
   if (cmd_name == NULL)
     return TID_ERROR;
-  extract_cmd_name(file_name, cmd_name);
+  extract_cmd_name(file_name, &cmd_name);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (cmd_name, PRI_DEFAULT, start_process, fn_copy);
@@ -78,17 +78,6 @@ process_execute (const char *file_name)
     palloc_free_page (fn_copy); 
     free(cmd_name);
     return -1;
-  }
-
-  /* Update the userprog properties of the thread */
-  struct thread* t = thread_get(tid);
-  t->cmd_name = cmd_name;
-  list_init(&t->children);
-
-  /* If the command is exec, add the thread as a 
-     a child thread */
-  if(!strcmp(t->cmd_name, "exec")){
-    list_push_back(thread_current(), &t->child); 
   }
 
   return tid;
@@ -116,7 +105,7 @@ start_process (void *file_name_)
   if (!success) 
     thread_exit ();
 
-  hex_dump(if_.esp, if_.esp, PHYS_BASE - if_.esp, true);
+  // hex_dump(if_.esp, if_.esp, PHYS_BASE - if_.esp, true);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -127,6 +116,24 @@ start_process (void *file_name_)
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
+
+/* Check if the process with the given tid is a child of
+   the current process */
+static struct thread*
+get_child(tid_t tid, struct list* children)
+{
+  struct list_elem *child;
+  for (child = list_begin (children); child != list_end (children);
+       child = list_next (child))
+    {
+      child_t* pt = list_entry(child, child_t, elem);
+      if(pt->tid==tid){
+        return pt;
+      }
+    }
+  return NULL;
+}
+
 
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
@@ -140,18 +147,34 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  while(1){
-    thread_yield();
-  };
-  return -1;
+  /* Check if the child exists */
+  child_t* child = get_child(child_tid, &thread_current()->children);
+
+  if(child==NULL || child->waited_once)
+    return -1;
+  
+  child->waited_once = true;
+
+  /* sema down the sema if the child thread is alive */
+  if(child->is_alive){
+    sema_down(&child->parent->sema);
+    return child->status;
+  }
 }
 
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
+  struct thread* cur = thread_current();
   uint32_t *pd;
+  /* If the parent thread is waiting for the current thread 
+     sema up the parent thread and remove the child from its list */
+  if(cur->parent->waiting_for = cur->tid){
+    sema_up(&cur->parent->sema);
+    child_t* c = get_child(cur->tid, &cur->parent->children);
+    list_remove(&c->elem);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -177,7 +200,7 @@ process_exit (void)
 void
 process_activate (void)
 {
-  struct thread *t = thread_current ();
+ struct thread *t = thread_current ();
 
   /* Activate thread's page tables. */
   pagedir_activate (t->pagedir);
@@ -263,7 +286,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
-  struct thread *t = thread_current ();
+ struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
   off_t file_ofs;
@@ -283,7 +306,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-
+  
   /* Extract the command line arguments */
   char* argv[CMD_ARGS_MAX];
   int argc;
@@ -581,7 +604,7 @@ setup_stack (void **esp, char* argv[], int argc)
 static bool
 install_page (void *upage, void *kpage, bool writable)
 {
-  struct thread *t = thread_current ();
+ struct thread *t = thread_current ();
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
