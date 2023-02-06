@@ -317,10 +317,6 @@ The same thing happen to P, which is free all the resources P has.
 >> kernel in the way that you did?
 It was done by validating the address before using it this always reduces
 the possibility that a program tries to access kernel space. 
-We did by validating it before using it. At the point we implemented it, we
-didn’t really understand the second approach which deals with the page fault
-inside exception and how the putuser() and getuser() can be used. We are just
-not confident enough to choose the second approach. 
 
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
