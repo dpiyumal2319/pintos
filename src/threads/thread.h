@@ -120,6 +120,8 @@ struct thread
     tid_t waiting_for;           /* Child tid for which the thread is waiting for*/
     struct semaphore sema;              /* Semaphore to lock the child threads */
 
+    struct file* executable_file;            
+
     unsigned fd_count;             /* Number of open files */
     struct list files;             /* Array to keep reference to file pointers*/
 #endif

@@ -18,6 +18,9 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+/* lock for executable file */
+struct lock lock;
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -102,8 +105,8 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+  if (!success)
+    thread_exit();
 
   // hex_dump(if_.esp, if_.esp, PHYS_BASE - if_.esp, true);
 
@@ -158,6 +161,7 @@ process_wait (tid_t child_tid UNUSED)
   /* sema down the sema if the child thread is alive */
   if(child->is_alive){
     sema_down(&child->parent->sema);
+    child->is_alive = false;
     return child->status;
   }
 }
@@ -170,10 +174,15 @@ process_exit (void)
   uint32_t *pd;
   /* If the parent thread is waiting for the current thread 
      sema up the parent thread and remove the child from its list */
-  if(cur->parent->waiting_for = cur->tid){
+  if(cur->parent != NULL){
     sema_up(&cur->parent->sema);
     child_t* c = get_child(cur->tid, &cur->parent->children);
     list_remove(&c->elem);
+  }
+
+  /* Close the executable file */
+  if(thread_current()->executable_file != NULL){
+    file_close(thread_current()->executable_file);
   }
 
   /* Destroy the current process's page directory and switch back
@@ -200,7 +209,7 @@ process_exit (void)
 void
 process_activate (void)
 {
- struct thread *t = thread_current ();
+  struct thread *t = thread_current ();
 
   /* Activate thread's page tables. */
   pagedir_activate (t->pagedir);
@@ -402,9 +411,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   success = true;
 
+
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if(success){
+    file_deny_write(file);
+    thread_current()->executable_file = file;
+  }else{
+    file_close (file);
+  }
   return success;
 }
 

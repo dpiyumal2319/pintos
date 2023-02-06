@@ -5,7 +5,7 @@
 #include "threads/thread.h"
 #include "devices/shutdown.h"
 #include "threads/vaddr.h"
-#include "filesys/filesys.h"
+#include "filesys/filesys.h"   
 #include "string.h"
 
 #define MIN_FILENAME 1
@@ -105,9 +105,8 @@ syscall_handler (struct intr_frame *f)
       break;
     }
     case SYS_CREATE:{
-      check_valid_uaddr((int*)f->esp+1);
-      char** name = (char**)((int*)f->esp+1);
       check_valid_uaddr((int*)f->esp+2);
+      char** name = (char**)((int*)f->esp+1);
       unsigned initial_size = *((unsigned *)f->esp+2);
       f->eax = create(name, initial_size);
       break;
@@ -131,29 +130,24 @@ syscall_handler (struct intr_frame *f)
       break;
     }
     case SYS_READ:{
-      check_valid_uaddr((int*)f->esp+1);
-      int fd = *((int*)f->esp + 1);
-      check_valid_uaddr((int*)f->esp+2);
-      void* buffer = (void*)(*((int*)f->esp + 2));
       check_valid_uaddr((int*)f->esp+3);
+      int fd = *((int*)f->esp + 1);
+      void* buffer = (void*)(*((int*)f->esp + 2));
       unsigned size = *((unsigned*)f->esp + 3);
       f->eax = read(fd, buffer, size);
       break;
     }
     case SYS_WRITE:{
-      check_valid_uaddr((int*)f->esp+1);
-      int fd = *((int*)f->esp + 1);
-      check_valid_uaddr((int*)f->esp+2);
-      void* buffer = (void*)(*((int*)f->esp + 2));
       check_valid_uaddr((int*)f->esp+3);
+      int fd = *((int*)f->esp + 1);
+      void* buffer = (void*)(*((int*)f->esp + 2));
       unsigned size = *((unsigned*)f->esp + 3);
       f->eax = write(fd, buffer, size);
       break;
     }
     case SYS_SEEK:{
-      check_valid_uaddr((int*)f->esp+1);
-      int fd = *((int*)f->esp + 1);
       check_valid_uaddr((int*)f->esp+2);
+      int fd = *((int*)f->esp + 1);
       unsigned position = *((unsigned*)f->esp + 2);
       seek(fd, position);
       break;
@@ -168,6 +162,7 @@ syscall_handler (struct intr_frame *f)
       check_valid_uaddr((int*)f->esp+1);
       int fd = *((int*)f->esp + 1);
       close(fd);
+      break;
     }
   }
 }
@@ -209,7 +204,9 @@ exit(int status)
 pid_t
 exec(const char** cmd_line)
 {
-  return process_execute(*cmd_line);
+  pid_t pid = process_execute(*cmd_line);
+    
+  return pid;
 }
 
 /* Wait function - wait for termination of a child 
@@ -227,7 +224,8 @@ create(const char** name, unsigned int initial_size)
 { 
   /* Check if the address is valid */
   if(check_valid_filename(*name)){
-    return filesys_create(*name, initial_size);
+    bool status = filesys_create(*name, initial_size);
+    return status;
   }
 
   return 0;
@@ -237,7 +235,10 @@ create(const char** name, unsigned int initial_size)
 bool
 remove(const char* name)
 {
-  return filesys_remove(name);
+  lock_acquire(&lock);
+  bool status = filesys_remove(name);
+  lock_release(&lock);
+  return status;
 }
 
 /* Open function - open the file corresponding to the 
@@ -280,8 +281,12 @@ open(const char** path)
 int
 filesize(int fd){
   struct file_desc* file_desc = get_file(fd);
-  if(file_desc!=NULL)
-    return file_length(file_desc->file);
+  if(file_desc!=NULL){
+    lock_acquire(&lock);
+    int size = file_length(file_desc->file);
+    lock_release(&lock);
+    return size;
+  }
 
   return -1;
 }
@@ -294,7 +299,10 @@ read(int fd, const void* buffer, unsigned size)
   /* Check if the buffer is valid */
   if(!is_user_vaddr(buffer+size)) exit(-1);
 
-  /* Check if the buffer is at valid user address */
+  /* Check if the fd is for the standard output file */
+  if(fd==STDOUT_FILENO) exit(-1);
+
+  /* Check if the fd is for the standard input file */
   if(fd==STDIN_FILENO){
     putbuf((const char*)buffer, size);
     return size;
@@ -327,7 +335,7 @@ write(int fd, const void* buffer, unsigned size)
   }
 
   /* If trying to write to the input file */
-  if(fd==STDIN_FILENO)  return -1;
+  if(fd==STDIN_FILENO)  exit(-1);
 
   /* Write to the file with the fd file id */
   struct file_desc* file_desc = get_file(fd);
@@ -347,8 +355,11 @@ void
 seek(int fd, unsigned position)
 {
   struct file_desc* file_desc = get_file(fd);
-  if(file_desc!=NULL)
+  if(file_desc!=NULL){
+    lock_acquire(&lock);
     file_seek(file_desc->file, position);
+    lock_release(&lock);
+  }
 }
 
 /* Tell function - changes the next byte to be read or written 
@@ -357,8 +368,12 @@ unsigned
 tell(int fd)
 {
   struct file_desc* file_desc = get_file(fd);
-  if(file_desc!=NULL)
-    return file_tell(file_desc->file);
+  if(file_desc!=NULL){
+    lock_acquire(&lock);
+    unsigned status = file_tell(file_desc->file);
+    lock_release(&lock);
+    return status;
+  }
 
   return -1;
 }
