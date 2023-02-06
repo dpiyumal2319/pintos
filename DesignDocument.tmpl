@@ -308,7 +308,8 @@ release all the resources allocated by P.When C tries to set it’s status and f
 parent has exited, it will ignore it and continue to execute.
 
 * P terminates after C exits
-The same thing happen to P, which is free all the resources P has. 
+All resources used by C are freed when C exits and resources used by P are freed when P
+exits
 
 
 ---- RATIONALE ----
@@ -326,10 +327,10 @@ Advantages:
 
 
 Disadvantages:
-1) Consumes kernel space, user program may open lots of files to crash the
-kernel.
-2) The inherits of open files opened by a parent require extra effort to be
-implement.
+1) Consumes space from the kernal space. User programs can create many files and overwhelm
+the kernel space
+2) Inability to access file descriptors globally prevents other processes from using the file pointers
+of files opened by other pointers. Each process should open a file on their own to use it
 
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
