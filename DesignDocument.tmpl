@@ -38,61 +38,59 @@ None
 
 How to setup the stack?
 ------------------------
-The following functions were used to extract the command line arguments and 
-arrange them in the right order before providing them to the function to be executed
+To set up the stack, we use specific functions to extract command-line arguments and order them correctly before passing them to the function that will execute them.
 
-1.  static bool setup_stack (void **esp, char* argv[], int argc) 
-Setup the stack after page is installed, when the stack has been initialized.
+static bool setup_stack (void **esp, char* argv[], int argc)
+This function initializes the stack after the page has been installed and is ready for use.
 
-2. tid_t process_execute (const char *file_name) 
-Starts a new thread running a user program loaded from filename which is
-the command line string.
+tid_t process_execute (const char *file_name)
+This function launches a new thread to run a user program based on the command-line string, file_name.
 
-The function extract_cmd_name was used to extract the command name from the command
-line string and a new thread was created by that function name to run the start_process
-function. The extract_cmd_name extract and function name from the command line string and
-returns only the string with the command line arguments seperated by spaces.
+To retrieve the command name from file_name, we use extract_cmd_name, which isolates and returns only the 
+command arguments as a space-separated string. A new thread is then created using this command name to invoke the start_process function.
 
-3. static void start_process (void *file_name_)
-A thread function that loads a user process and starts it running. This function initializes
-the interrupt frame and page for the function and calls the load function.
+static void start_process (void *file_name_)
+This thread function loads and initiates a user process. It sets up the interrupt 
+frame and page for the function, then calls the load function.
 
 How do you arrange for the elements of argv[] to be in the right order?
 -----------------------------------------------------------------------
 bool load (const char *file_name, void (**eip) (void), void **esp)
 
-The load function gets the filename and extracts the command line arguments and uses the 
-extract_cmd_args function to split the command line string containing only the comand line 
-arguments. It adds each of the seperated arguments to the argv[] array which is initialized to
-a maximum fixed size. This function effectively splits the command line arguments and inserts 
-them to the argv array in the correct order.
+The load function takes the file_name, extracts command-line arguments from it, and then uses 
+extract_cmd_args to split the string into individual arguments. 
+These separated arguments are added to the argv[] array, which has a 
+fixed maximum size. This ensures that each argument is correctly ordered within argv[], ready for processing.
 
 How to avoid overflowing the stack page?
 ----------------------------------------
-We check for a page fault occurance using the page_fault function which terminates using
-exit(-1) the process on the occurance of a page_fault. Also we check whether the esp pointer
-is pointing to a valid address and if not we terminate the process using exit(-1) 
+The page_fault function is used to check for page faults. If a page fault occurs, the function 
+terminates the process by calling exit(-1). Additionally, we ensure that the esp pointer points 
+to a valid address; if it does not, the process is also terminated with exit(-1).
 
 ---- RATIONALE ----
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
-Both strtok and strtok_r are used to split a string into tokens, but unlike strtok, 
-A third save_ptr argument is a char-pointer * variable which strtok r() uses internally in
-keep context between subsequent calls without hampering its earlier course of action
-This is required as in pintos, the kernel separates commands into command line (executable name) 
-and arguments. So we need to put the address of the arguments somewhere we can reach later.
+Both strtok and strtok_r can split a string into tokens. However, unlike strtok, strtok_r includes 
+a third argument, save_ptr, which is a char* variable. strtok_r uses save_ptr to maintain context 
+between successive calls without disrupting its previous state. This feature is essential in Pintos,
+ where the kernel separates commands into the command-line executable name and its arguments. 
+ Using save_ptr allows us to store the address of arguments in a location that can be accessed later.
 
 >> A4: In Pintos, the kernel separates commands into a executable name
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
 
-1) Shortening the time inside kernel
-2) Robust checking. Checking whether the executable is there before passing it
-to kernel to avoid kernel fail. Checking whether the arguments are over the
-limit. 
-3) Once it can separate the commands, it can do advanced pre-processing, acting
-more like an interpreter not only an interface. Like passing more than 1 set
-of command line at a time, i.e. cd; mkdir tmp; touch test; and pipe.
+1)Minimizing Kernel Time
+Reducing time spent within the kernel to improve efficiency.
+
+2)Robust Validation
+Ensuring the executable exists before passing it to the kernel to prevent kernel failures.
+Checking if arguments exceed the allowed limit.
+3)Enhanced Command Processing
+Once commands are correctly separated, advanced pre-processing can be achieved. 
+This allows the interface to behave more like an interpreter, enabling multiple 
+command sets in one line (e.g., cd; mkdir tmp; touch test;) and support for pipes.
 
 
 			     SYSTEM CALLS
@@ -161,10 +159,11 @@ the child processes of the process and the files opened by the thread.
 >> Are file descriptors unique within the entire OS or just within a
 >> single process?
 
-File descriptors are handled used the file_desc struct and here we store the
-file descrriptor ID (fd) the name of the file (name) and the pointer to the actual
-opened file (file). In this implementation the file descriptor is unique for each 
-single process and its the given the next available fd_count value of the process.
+File descriptors are managed using the file_desc struct, which stores 
+the file descriptor ID (fd), the file name (name), and a pointer to the 
+actual opened file (file). In this implementation, each file descriptor 
+is unique to a single process and is assigned the next available fd_count 
+value specific to that process
 
 ---- ALGORITHMS ----
 
