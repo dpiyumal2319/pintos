@@ -18,8 +18,39 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+/* lock for executable file */
+struct lock lock;
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+static void extract_cmd_args(const char* file_name, char* argv[], int* argc);
+static void extract_cmd_name(const char* file_name, char** cmd_name);
+
+/* A function to extract the command name from the command
+   line instruction */
+static void
+extract_cmd_name(const char* file_name, char** cmd_name)
+{
+  char* save_ptr;
+  *cmd_name = strtok_r(file_name, CMD_ARGS_DELIMITER, &save_ptr);
+}
+
+/* A function to extract the command line arguments from 
+   the command line instruction */
+static void
+extract_cmd_args(const char *file_name, char* argv[], int* argc)
+{
+  char *token, *save_ptr;
+  int i;
+  for(token=strtok_r(file_name, CMD_ARGS_DELIMITER, &save_ptr), i=0; 
+      token != NULL; token=strtok_r(NULL, CMD_ARGS_DELIMITER, &save_ptr), i++)
+  {
+      argv[i] = token;
+  }  
+
+  *argc = i;
+}
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -38,12 +69,23 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* Extract the command name from the command line instruction */
+  char *cmd_name = (char* )malloc (strlen(file_name)+1);
+  if (cmd_name == NULL)
+    return TID_ERROR;
+  extract_cmd_name(file_name, &cmd_name);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
+  tid = thread_create (cmd_name, PRI_DEFAULT, start_process, fn_copy);
+  if (tid == TID_ERROR){
     palloc_free_page (fn_copy); 
+    free(cmd_name);
+    return -1;
+  }
+
   return tid;
 }
+
 
 /* A thread function that loads a user process and starts it
    running. */
@@ -63,8 +105,10 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+  if (!success)
+    thread_exit();
+
+  // hex_dump(if_.esp, if_.esp, PHYS_BASE - if_.esp, true);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -75,6 +119,24 @@ start_process (void *file_name_)
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
+
+/* Check if the process with the given tid is a child of
+   the current process */
+static struct thread*
+get_child(tid_t tid, struct list* children)
+{
+  struct list_elem *child;
+  for (child = list_begin (children); child != list_end (children);
+       child = list_next (child))
+    {
+      child_t* pt = list_entry(child, child_t, elem);
+      if(pt->tid==tid){
+        return pt;
+      }
+    }
+  return NULL;
+}
+
 
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
@@ -88,15 +150,40 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  /* Check if the child exists */
+  child_t* child = get_child(child_tid, &thread_current()->children);
+
+  if(child==NULL || child->waited_once)
+    return -1;
+  
+  child->waited_once = true;
+
+  /* sema down the sema if the child thread is alive */
+  if(child->is_alive){
+    sema_down(&child->parent->sema);
+    child->is_alive = false;
+    return child->status;
+  }
 }
 
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
+  struct thread* cur = thread_current();
   uint32_t *pd;
+  /* If the parent thread is waiting for the current thread 
+     sema up the parent thread and remove the child from its list */
+  if(cur->parent != NULL){
+    sema_up(&cur->parent->sema);
+    child_t* c = get_child(cur->tid, &cur->parent->children);
+    list_remove(&c->elem);
+  }
+
+  /* Close the executable file */
+  if(thread_current()->executable_file != NULL){
+    file_close(thread_current()->executable_file);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -195,7 +282,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, char* argv[], int argc);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -208,11 +295,12 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
-  struct thread *t = thread_current ();
+ struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
+  char *fn_copy;
   int i;
 
   /* Allocate and activate page directory. */
@@ -221,11 +309,24 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  /* Make a copy of FILE_NAME.
+     Otherwise there's a race between the caller and load(). */
+  fn_copy = palloc_get_page (0);
+  if (fn_copy == NULL)
+    return TID_ERROR;
+  strlcpy (fn_copy, file_name, PGSIZE);
+  
+  /* Extract the command line arguments */
+  char* argv[CMD_ARGS_MAX];
+  int argc;
+  extract_cmd_args(fn_copy, argv, &argc);
+
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (argv[0]);
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", argv[0]);
+      palloc_free_page(fn_copy);
       goto done; 
     }
 
@@ -302,7 +403,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, argv, argc))
     goto done;
 
   /* Start address. */
@@ -310,9 +411,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   success = true;
 
+
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if(success){
+    file_deny_write(file);
+    thread_current()->executable_file = file;
+  }else{
+    file_close (file);
+  }
   return success;
 }
 
@@ -424,10 +531,66 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
+/* Create the stack by pushing the command line arguments according
+   to the following convention
+    1. Push args from left to right
+    2. Push padding to stack to align it to 4 byte (if necessary)
+    3. Push addresses of the args right to left
+    4. Push argv and argc
+    5. Push return address (0 as fake address)
+*/
+static void
+create_stack(void **esp, char* argv[], int argc)
+{
+  *esp = PHYS_BASE;
+  /* References for the args */
+  uint32_t refs[argc];
+  int i = argc;
+  int tot_len = 0;
+
+  while(--i >= 0){
+    /* Pushing the arguments to the stack */
+    int arg_len = (strlen(argv[i])+1);
+    *esp -= arg_len;
+    tot_len += arg_len;
+    refs[i] = (uint32_t *)*esp;
+    memcpy(*esp,argv[i],arg_len); 
+  }
+
+  /* Add padding to make memory aligned */
+  int align = 4 - tot_len%4;
+  *esp -= align;
+  memset(*esp, 0, align);
+
+  /* Pushing the null sentinel to the stack */
+  *esp = *esp - 4;
+  (*(uint32_t  **)(*esp)) = 0;
+  
+  /* Pushing the references of the arguments to the stack */
+  i = argc;
+  while(--i >= 0){
+    *esp = *esp - 4; /* Each reference is 4 bytes*/
+    (*(uint32_t **)(*esp)) = refs[i];
+  }
+
+
+  /* Pushing the reference to argv to the stack */
+  *esp = *esp - 4;
+  (*(uintptr_t  **)(*esp)) = (*esp+4);
+
+  /* Pushing argc to the stack */
+  *esp = *esp - 4;
+  (*(int *)(*esp)) = argc;
+
+  /* Pushing the fake return address */
+  *esp = *esp - 4;
+  (*(int *)(*esp))=0;
+}
+
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, char* argv[], int argc) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -437,7 +600,7 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        create_stack(esp, argv, argc);
       else
         palloc_free_page (kpage);
     }
@@ -456,7 +619,7 @@ setup_stack (void **esp)
 static bool
 install_page (void *upage, void *kpage, bool writable)
 {
-  struct thread *t = thread_current ();
+ struct thread *t = thread_current ();
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */

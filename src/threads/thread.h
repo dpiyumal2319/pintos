@@ -81,6 +81,24 @@ typedef int tid_t;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
+
+typedef struct child
+   {  
+      tid_t tid;
+      int status;
+      bool is_alive;
+      bool waited_once;
+      struct thread* parent;
+      struct list_elem elem;
+   }child_t;
+
+struct file_desc{
+    int fd;
+    char** name;
+    struct file* file;
+    struct list_elem elem;
+};
+
 struct thread
   {
     /* Owned by thread.c. */
@@ -104,7 +122,15 @@ struct thread
     /* Owned by userprog/process.c. */
     char* prog_name;
     uint32_t *pagedir;                  /* Page directory. */
-    struct list children;
+    struct thread* parent;              /* Parent process */
+    struct list children;               /* List to hold the children */
+    tid_t waiting_for;           /* Child tid for which the thread is waiting for*/
+    struct semaphore sema;              /* Semaphore to lock the child threads */
+
+    struct file* executable_file;            
+
+    unsigned fd_count;             /* Number of open files */
+    struct list files;             /* Array to keep reference to file pointers*/
     struct list desc_table;
     int next_fd;
     struct file *executable;   /* file structure referring the executable, 
@@ -115,6 +141,8 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
+
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -160,4 +188,5 @@ void thread_update_priority (struct thread *t);
 /* rearrange thread priority of ready thread upon priority change*/
 void thread_ready_rearrange (struct thread *t);
 
+struct thread* thread_get(tid_t);
 #endif /* threads/thread.h */
