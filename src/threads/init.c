@@ -93,7 +93,7 @@ pintos_init (void)
   console_init ();  
 
   /* Greet user. */
-printf ("Pintos booting with %'"PRIu32" kB RAM...\n",
+printf ("Welcome to pintos - cs2043 \nPintos booting with %'"PRIu32" kB RAM...\n",
           init_ram_pages * PGSIZE / 1024);
 
   /* Initialize memory system. */
@@ -141,7 +141,7 @@ printf ("Pintos booting with %'"PRIu32" kB RAM...\n",
     	rdline (line, 10);
     	
     	if (strcmp(line,"whoami") == 0) { 
-    		printf("NAME: WIJETHUNGA W M D P,\n INDEX:220727G\n") ; 
+    		printf("NAME: WIJETHUNGA W M D P,\nINDEX:220727G.\n") ; 
     	} 
       else if (strcmp(line,"shutdown") == 0) {
     		printf("Shutting down pintos. Have a nice day!!\n") ;
