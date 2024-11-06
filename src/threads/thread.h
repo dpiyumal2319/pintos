@@ -107,13 +107,20 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int real_priority;                  /* Real priority of the thread */
     struct list_elem allelem;           /* List element for all threads list. */
 
+    int64_t wakeup_time;                /* wake up time to thread */
+    
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-
+    struct list locks;                  /* List for the locks a thread has acquired */
+    struct lock* lock_to_acquire;       /* Lock the thread is trying to acquire */
+   
+    /* */
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
+    char* prog_name;
     uint32_t *pagedir;                  /* Page directory. */
     struct thread* parent;              /* Parent process */
     struct list children;               /* List to hold the children */
@@ -124,6 +131,11 @@ struct thread
 
     unsigned fd_count;             /* Number of open files */
     struct list files;             /* Array to keep reference to file pointers*/
+    struct list desc_table;
+    int next_fd;
+    struct file *executable;   /* file structure referring the executable, 
+                                  used to deny writing to the file as long as the process 
+                                  is running(and close it upon exit) */
 #endif
 
     /* Owned by thread.c. */
@@ -167,6 +179,14 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+struct thread* thread_get (tid_t tid);
+
+/* compare threads by priority */
+bool cmp_thread_by_priority(struct list_elem *curElement, struct list_elem *otherElement);
+/* update thread lock chain priority recursively*/
+void thread_update_priority (struct thread *t);
+/* rearrange thread priority of ready thread upon priority change*/
+void thread_ready_rearrange (struct thread *t);
 
 struct thread* thread_get(tid_t);
 #endif /* threads/thread.h */
