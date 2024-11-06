@@ -171,22 +171,21 @@ value specific to that process
 >> kernel.
 
 Read:
-1. Check if fd(esp), buffer(esp+1) and size(esp+2) are valid pointers, if so invoke the
-read function by passing the arguments
-2. Check if the buffer+size points to a valid pointer else return exit(-1)
-3. If fd is STDOUT_FILENO invoke exit(-1)
-4. If fd is STDIN_FILENO put the content in the buffer
-5. If it's a normal file descriptor, obtain the lock for the file, read the file, get status
-release the lock and return the address.
+For the read function, the process begins by verifying that fd, buffer, and size (found at esp, esp+1, and esp+2, respectively)
+are valid pointers. If they are, it checks that buffer + size points to a valid memory location; otherwise, the function exits 
+with exit(-1). If fd is STDOUT_FILENO, it terminates since reading from standard output is invalid. If fd is STDIN_FILENO, 
+indicating input from standard input, the content is placed directly into buffer. For a standard file descriptor, the function
+acquires a file lock, reads data from the file, updates the status, releases the lock, and returns the address of the data in
+buffer.
 
 Write:
-1. Check if fd(esp), buffer(esp+1) and size(esp+2) are valid pointers, if so invoke the
-write function by passing the arguments
-2. Check if the buffer+size points to a valid pointer else return exit(-1)
-3. If fd is STDIN_FILENO invoke exit(-1)
-4. If fd is STDOUT_FILENO put the content in the buffer
-5. If it's a normal file descriptor, obtain the lock for the file, write to the file, get actual
-size written to the file, release the lock and return the actual size.
+In the write function, the system first checks that fd, buffer, and size are valid pointers
+before proceeding. It also ensures that buffer + size points to a valid memory location; if 
+not, it terminates with exit(-1). If fd is STDIN_FILENO, the function exits, as writing to 
+standard input is not allowed. If fd is STDOUT_FILENO, it writes the specified content to 
+the output buffer. For other file descriptors, the function locks the file, writes data, 
+calculates the actual bytes written, releases the lock, and returns the number of bytes 
+successfully written to the file.
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -196,25 +195,27 @@ size written to the file, release the lock and return the actual size.
 >> for improvement in these numbers, and how much?
 
 For a full page of data:
-The minimum number of page table inspections would be 1.
-If the first inspection(pagedir_get_page) returned a page head back(which can be identified by the address) 
-it is not needed to inspect any more, it can contain one page of data.
+The minimum number of page table inspections required is 1. If the
+first inspection (pagedir_get_page) returns a page head (which can be identified by the address),\
+no further inspections are needed. The returned page will already contain the required data.
 
-The maximum number might be 4096 if it’s not contiguous, in that case 
-every address should be checked to ensure a valid access. When it’s contiguous, the
-maximum number of checks would be 2, if we get a kernel virtual address that is not a
-page head, we surely want to check the start pointer and the end pointer of the
-full page data, see if it’s mapped. 
+The maximum number of page table inspections could be 4096 if the pages are not contiguous, 
+as each address must be checked for valid access. However, if the pages are contiguous, the 
+maximum number of inspections is 2. If a kernel virtual address isn't a page head, we need 
+to check both the start and end pointers of the full page data to confirm whether it's mapped.
 
 
 For 2 bytes of data:
-The minimum number will be 1. Similar to the above case if we get back a kernel virtual address
-that has more than 2 bytes space to the end of page, we know it’s in this page,
-another inspection is not necessary.
+The minimum number of inspections will be 1. Similar to the previous case, 
+if a kernel virtual address is returned with more than 2 bytes of space 
+remaining to the end of the page, we can confirm that it is within that 
+page, and no further inspections are needed.
 
-The greatest number will also be 2. If it’s not contiguous or if it’s contiguous
-but we get back a kernel virtual address that only 1 byte far from the end of
-page, we have to inspect where the other byte is located. 
+The greatest number of inspections will be 2. This occurs 
+if the pages are not contiguous, or if they are contiguous 
+but the kernel virtual address is only 1 byte away from the 
+end of the page. In such cases, we need to inspect where the 
+remaining byte is located.
 
 Improvements:
 We don’t see much room to improve. 
@@ -223,19 +224,16 @@ We don’t see much room to improve.
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
 
-wait syscall is implemented using the process_wait function.
+The syscall is implemented using the process_wait function. 
+A new struct, child, is introduced to store information about a child process. 
+This struct includes an attribute, status, which holds the exit status of the child thread. 
+Additionally, it contains a pointer to the parent thread, allowing the child to find its parent 
+and update its status if the parent still exists. A list of child structs is maintained within each thread struct.
 
-A new struct called child is used to store information about the child process and
-the attribute status in that struct is used to store the exit status of the child thread.
-Also a pointer to the parent thread is included in the child struct to allow the child to
-find its parent and set it's status if parent still exists.
-A list of child structs is maintained in each thread struct.
-
-In the process_wait function we get the child processes tid value. This tid value is used
-to find the child process from the children list in the current thread. If the child process is not
-found in the children list of the current thread or we already waited for the child, return -1. 
-Otherwise, sema_down the semaphore of the parent of the child process and set the child processe's
-is_alive status to false. Return the status of the child process.
+In the process_wait function, the child process’s thread ID (tid) is used to locate the 
+child in the current thread’s children list. If the child is not found or if the child has 
+already been waited on, the function returns -1. Otherwise, it uses sema_down on the parent’s 
+semaphore and sets the child’s is_alive status to false. Finally, the function returns the child’s exit status.
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -251,23 +249,21 @@ is_alive status to false. Return the status of the child process.
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
 
-Firstly, avoiding bad user memory access is done by checking if the stack pointer, 
-is pointing to a valid address using the check_valid_uaddr function. This function 
-checks if the user address is valid and is mapped in the process’s page directory.
-This check will be made to all the esp processes that are accessed in the function call
-and based on the system call we should if some other addresses are also valid 
-For example: Taking “write” system call as an example, the esp
-pointer and the three arguments pointer will be checked first, if anything is
-invalid, the process is terminated. Then after enter into write function, the buffer
-beginning pointer and the buffer ending pointer(buffer + size - 1) will be
-checked before being used. 
+Firstly, to prevent invalid user memory access, the system checks whether the stack pointer (esp) 
+is pointing to a valid address using the check_valid_uaddr function. This function verifies that 
+the user address is both valid and mapped in the process’s page directory. This check is applied 
+to all esp processes accessed during a function call, and based on the system call, additional 
+address validity checks may be required. For instance, in the write system call, the function 
+first checks the validity of the esp pointer and the three argument pointers. If any are invalid, 
+the process is terminated. Once inside the write function, the starting pointer of the buffer and 
+the buffer’s ending pointer (buffer + size - 1) are checked for validity before they are used.
 
-Secondly when the error occurs it is handled inside the page_fault exception.
-We reset the eip pointer to the eax pointer and the eax pointer to 0xffffffff
-and exit(-1) to terminate the process.
-For example, bad-jump2-test( *(int*)0xC0000000 = 42; ) it’s trying to write an invalid address,
-there is no way we could prevent this case happen, so, when inside page_fault exception handler,
-the eax and eip addresses are reset as mentioned above and the process is terminated with exit(-1)
+Secondly, errors are handled inside the page_fault exception. When an invalid memory access occurs, 
+the eip pointer is reset to the eax pointer, and eax is set to 0xffffffff. The process is then 
+terminated using exit(-1). For example, in a scenario like bad-jump2-test (*(int*)0xC0000000 = 42;), 
+which attempts to write to an invalid address, there is no way to prevent this error. Therefore, when 
+the page_fault exception handler is triggered, the eax and eip addresses are reset as described, and 
+the process is terminated with exit(-1).
 
 
 ---- SYNCHRONIZATION ----
