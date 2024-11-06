@@ -111,10 +111,7 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-
-#ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
+        uint32_t *pagedir;                  /* Page directory. */
     struct thread* parent;              /* Parent process */
     struct list children;               /* List to hold the children */
     tid_t waiting_for;           /* Child tid for which the thread is waiting for*/
@@ -124,7 +121,6 @@ struct thread
 
     unsigned fd_count;             /* Number of open files */
     struct list files;             /* Array to keep reference to file pointers*/
-#endif
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
