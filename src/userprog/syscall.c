@@ -17,7 +17,7 @@ struct lock lock;
 static void syscall_handler (struct intr_frame *);
 
 /* System call function declarations */
-void halt(void);
+void halt(void); 
 void exit(int status);
 pid_t exec(const char** cmd_line);
 int wait(pid_t pid);

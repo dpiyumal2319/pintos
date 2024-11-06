@@ -14,7 +14,7 @@ struct switch_threads_frame
     struct thread *next;        /* 24: switch_threads()'s NEXT argument. */
   };
 
-/* Switches from CUR, which must be the running thread, to NEXT,
+/* Switches from CUR, which must be the running thread, to NEXT, 
    which must also be running switch_threads(), returning CUR in
    NEXT's context. */
 struct thread *switch_threads (struct thread *cur, struct thread *next);

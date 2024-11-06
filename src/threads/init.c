@@ -64,6 +64,7 @@ static char **read_command_line (void);
 static char **parse_options (char **argv);
 static void run_actions (char **argv);
 static void usage (void);
+void rdline(char line[], size_t size);
 
 #ifdef FILESYS
 static void locate_block_devices (void);
@@ -76,6 +77,7 @@ int pintos_init (void) NO_RETURN;
 int
 pintos_init (void)
 {
+  // printf("Hello, Pintos!\n");
   char **argv;
 
   /* Clear BSS. */  
@@ -91,7 +93,7 @@ pintos_init (void)
   console_init ();  
 
   /* Greet user. */
-  printf ("Pintos booting with %'"PRIu32" kB RAM...\n",
+printf ("Pintos booting with %'"PRIu32" kB RAM...\n",
           init_ram_pages * PGSIZE / 1024);
 
   /* Initialize memory system. */
@@ -128,19 +130,96 @@ pintos_init (void)
 #endif
 
   printf ("Boot complete.\n");
-  
+
   if (*argv != NULL) {
     /* Run actions specified on kernel command line. */
     run_actions (argv);
   } else {
-    // TODO: no command line passed to kernel. Run interactively 
+    while(true) {
+    	printf("CS2043>");
+    	char line[10];
+    	rdline (line, 10);
+    	
+    	if (strcmp(line,"whoami") == 0) { 
+    		printf("NAME: WIJETHUNGA W M D P,\n INDEX:220727G\n") ; 
+    	} 
+      else if (strcmp(line,"shutdown") == 0) {
+    		printf("Shutting down pintos. Have a nice day!!\n") ;
+        shutdown();
+        thread_exit();
+    	} 
+      else if (strcmp(line,"time") == 0) {
+    		printf("Time passed Unix epoch: %lu sec\n", rtc_get_time());
+    	} 
+      else if (strcmp(line,"ram") == 0) {
+    		printf("Available RAM: %u KB\n", init_ram_pages * PGSIZE / 1024);
+    	} 
+      else if (strcmp(line,"thread") == 0) {
+        printf("Thread stats are: \n");
+    		thread_print_stats();
+    	} 
+      else if (strcmp(line,"priority") == 0) {
+        printf("Priority number: %d\n", thread_get_priority());
+        printf("Priority level : ");
+
+        int priority = thread_get_priority();
+    
+        if (priority == 1) {
+          printf("Low\n");
+        } else if (priority == 31) {
+          printf("Medium\n");
+        } else if (priority == 63) {
+          printf("High\n");
+        }
+      }
+      else if (strcmp(line,"exit") == 0) {
+    		printf("Exiting Shell..\n");
+    		break;
+    	} 
+      else 
+    		printf("Invalid Command. Please retry\n");
+    }
   }
 
   /* Finish up. */
   shutdown ();
   thread_exit ();
 }
-
+void rdline(char line[], size_t size) {
+    char c;
+    char* pos = line;
+
+    while (1) {
+        c = input_getc();
+
+        // Exit loop on carriage return
+        if (c == '\r') {
+            break;
+        }
+
+        // Check for max character limit
+        if (pos >= line + size - 1) {
+            printf("\nMax character limit reached\n");
+            return;
+        }
+
+        // Handle backspace
+        if (c == '\b') {
+            if (pos > line) {
+                printf("\b \b");
+                pos--;
+            }
+        }
+        // Handle regular character input
+        else {
+            printf("%c", c);
+            *pos++ = c;
+        }
+    }
+
+    *pos = '\0';
+    printf("\n");
+}
 /* Clear the "BSS", a segment that should be initialized to
    zeros.  It isn't actually stored on disk or zeroed by the
    kernel loader, so we have to zero it ourselves.
